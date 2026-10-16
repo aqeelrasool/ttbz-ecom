@@ -299,14 +299,16 @@ export default function App() {
       />
 
       {/* Main Products Grid Section */}
-      <main className="container" style={{ flexGrow: 1, paddingTop: "24px", paddingBottom: "40px" }}>
+      <main className="container" style={{ flexGrow: 1, paddingTop: "20px", paddingBottom: "40px" }}>
         {/* Results summary bar */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: "18px",
+            flexWrap: "wrap",
+            gap: "6px 12px",
+            marginBottom: "16px",
           }}
         >
           <div style={{ fontSize: "0.86rem", color: "var(--text-muted)", fontWeight: 600 }}>
@@ -378,13 +380,7 @@ export default function App() {
           </div>
         ) : (
           /* Grid of Products (Mobile 2-columns / Desktop 3-4 columns) */
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: "16px",
-            }}
-          >
+          <div className="product-grid">
             {filteredProducts.map((product) => (
               <ProductCard
                 key={product.id}
@@ -404,14 +400,15 @@ export default function App() {
         target="_blank"
         rel="noopener noreferrer"
         title="Chat on WhatsApp"
+        aria-label="Chat on WhatsApp"
         style={{
           position: "fixed",
-          bottom: "22px",
-          right: "20px",
+          bottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+          right: "16px",
           backgroundColor: "#25D366",
           color: "#ffffff",
-          width: "56px",
-          height: "56px",
+          width: "54px",
+          height: "54px",
           borderRadius: "50%",
           display: "flex",
           alignItems: "center",

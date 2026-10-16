@@ -1,26 +1,36 @@
-import React, { useState } from "react";
-import { X, Plus, Trash2, Upload, Sparkles, Wand2, DollarSign, Image as ImageIcon } from "lucide-react";
-import { uploadProductImage } from "../../services/db";
+import React, { useState, useRef } from "react";
+import {
+  X,
+  Plus,
+  Trash2,
+  Sparkles,
+  Wand2,
+  DollarSign,
+  Images,
+  UploadCloud,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+} from "lucide-react";
+import GalleryPicker from "./GalleryPicker";
+import { addGalleryImages } from "../../services/gallery";
+import useBodyScrollLock from "../../utils/useBodyScrollLock";
 
 // Quick Sizing Presets for rapid product creation
 const QUICK_SIZE_PRESETS = [
-  {
-    name: "Baby Standard",
-    sizes: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-3 Years"],
-  },
-  {
-    name: "Newborn Essentials",
-    sizes: ["Newborn", "0-3 Months", "3-6 Months"],
-  },
-  {
-    name: "Kids (2-6 Yrs)",
-    sizes: ["2-3 Years", "3-4 Years", "4-5 Years", "5-6 Years"],
-  },
-  {
-    name: "Standard S/M/L",
-    sizes: ["Small", "Medium", "Large"],
-  },
+  { name: "Baby Standard", sizes: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-3 Years"] },
+  { name: "Newborn Essentials", sizes: ["Newborn", "0-3 Months", "3-6 Months"] },
+  { name: "Kids (2-6 Yrs)", sizes: ["2-3 Years", "3-4 Years", "4-5 Years", "5-6 Years"] },
+  { name: "Standard S/M/L", sizes: ["Small", "Medium", "Large"] },
 ];
+
+const labelStyle = {
+  display: "block",
+  fontSize: "0.85rem",
+  fontWeight: 700,
+  color: "var(--teal-900)",
+  marginBottom: 6,
+};
 
 export default function ProductFormModal({
   product,
@@ -29,28 +39,29 @@ export default function ProductFormModal({
   onClose,
   currency = "PKR",
 }) {
+  useBodyScrollLock(true);
+
   const [title, setTitle] = useState(product?.title || "");
   const [description, setDescription] = useState(product?.description || "");
+  const [fabricTag, setFabricTag] = useState(product?.fabricTag || product?.fabric_tag || "");
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured || false);
   const [isActive, setIsActive] = useState(product?.isActive !== false);
+  const [saving, setSaving] = useState(false);
 
-  // Multi-category support
   const [selectedCategoryIds, setSelectedCategoryIds] = useState(
     product?.categoryIds || (categories.length > 0 ? [categories[0].id] : [])
   );
 
-  // Images list
-  const [images, setImages] = useState(
-    product?.images && product.images.length > 0
-      ? product.images
-      : ["/products/mint-embroidered-dress.jpg"]
-  );
+  // Images state
+  const [images, setImages] = useState(product?.images?.length ? product.images : []);
   const [imageUrlInput, setImageUrlInput] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+  const [directUploadProgress, setDirectUploadProgress] = useState(null);
+  const directFileInputRef = useRef(null);
 
-  // Sizes with individual pricing
+  // Sizes & Pricing state
   const [sizes, setSizes] = useState(
-    product?.sizes && product.sizes.length > 0
+    product?.sizes?.length
       ? product.sizes
       : [
           { size: "0-3 Months", price: 2400, inStock: true },
@@ -58,180 +69,149 @@ export default function ProductFormModal({
           { size: "6-12 Months", price: 2800, inStock: true },
         ]
   );
-
-  // Quick Batch Pricing state
   const [batchBasePrice, setBatchBasePrice] = useState(2500);
   const [batchStep, setBatchStep] = useState(200);
 
-  // Toggle Category selection (multi-category)
   const toggleCategory = (catId) => {
     if (selectedCategoryIds.includes(catId)) {
-      if (selectedCategoryIds.length === 1) return; // keep at least 1
+      if (selectedCategoryIds.length === 1) return; // Keep at least one category
       setSelectedCategoryIds(selectedCategoryIds.filter((id) => id !== catId));
     } else {
       setSelectedCategoryIds([...selectedCategoryIds, catId]);
     }
   };
 
-  // Add individual size row
   const handleAddSizeRow = () => {
     setSizes([...sizes, { size: "New Size", price: batchBasePrice || 2500, inStock: true }]);
   };
 
-  // Update specific size row
-  const handleUpdateSizeRow = (index, field, value) => {
+  const handleUpdateSizeRow = (i, field, value) => {
     const updated = [...sizes];
-    updated[index] = { ...updated[index], [field]: value };
+    updated[i] = { ...updated[i], [field]: value };
     setSizes(updated);
   };
 
-  // Remove size row
-  const handleRemoveSizeRow = (index) => {
-    if (sizes.length <= 1) return;
-    setSizes(sizes.filter((_, i) => i !== index));
+  const handleRemoveSizeRow = (i) => {
+    if (sizes.length > 1) {
+      setSizes(sizes.filter((_, idx) => idx !== i));
+    }
   };
 
-  // Quick Preset Add
   const handleApplyPreset = (presetSizes) => {
     const base = Number(batchBasePrice) || 2400;
     const step = Number(batchStep) || 200;
-    const newSizes = presetSizes.map((sizeName, idx) => ({
-      size: sizeName,
-      price: base + idx * step,
-      inStock: true,
-    }));
-    setSizes(newSizes);
+    setSizes(presetSizes.map((s, idx) => ({ size: s, price: base + idx * step, inStock: true })));
   };
 
-  // Batch Set Prices on all current sizes
   const handleBatchSetPrices = () => {
     const base = Number(batchBasePrice) || 2400;
     const step = Number(batchStep) || 0;
-    const updated = sizes.map((s, idx) => ({
-      ...s,
-      price: base + idx * step,
-    }));
-    setSizes(updated);
+    setSizes(sizes.map((s, idx) => ({ ...s, price: base + idx * step })));
   };
 
-  // Add Image URL
+  // Direct multi-image upload
+  const handleDirectMultiUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+
+    setDirectUploadProgress({ done: 0, total: files.length });
+    try {
+      const added = await addGalleryImages(files, (done) =>
+        setDirectUploadProgress({ done, total: files.length })
+      );
+      const newUrls = added.map((item) => item.url);
+      // Append new URLs in upload sequence
+      setImages((prev) => [...prev, ...newUrls]);
+    } catch (err) {
+      alert("Image upload failed: " + (err.message || "Unknown error"));
+    } finally {
+      setDirectUploadProgress(null);
+    }
+  };
+
   const handleAddImageUrl = () => {
-    if (!imageUrlInput.trim()) return;
-    setImages([...images, imageUrlInput.trim()]);
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    setImages([...images, url]);
     setImageUrlInput("");
   };
 
-  // Upload image file
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const uploadedUrl = await uploadProductImage(file);
-      setImages([...images, uploadedUrl]);
-    } catch (err) {
-      alert("Error uploading image: " + err.message);
-    } finally {
-      setUploading(false);
-    }
+  const handleGalleryConfirm = (urls) => {
+    setImages((prev) => [...prev, ...urls.filter((u) => !prev.includes(u))]);
+    setShowGallery(false);
   };
 
-  // Remove Image
-  const handleRemoveImage = (index) => {
-    setImages(images.filter((_, i) => i !== index));
+  const moveImage = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= images.length) return;
+    const next = [...images];
+    [next[i], next[j]] = [next[j], next[i]];
+    setImages(next);
   };
 
-  // Submit
-  const handleSubmit = (e) => {
+  const removeImage = (i) => {
+    setImages(images.filter((_, idx) => idx !== i));
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim()) {
-      alert("Please enter product title");
-      return;
-    }
-    if (sizes.length === 0) {
-      alert("Please add at least one size");
-      return;
-    }
+    if (!title.trim()) return alert("Please enter product title");
+    if (sizes.length === 0) return alert("Please add at least one size");
 
-    const payload = {
-      ...(product || {}),
-      title: title.trim(),
-      description: description.trim(),
-      categoryIds: selectedCategoryIds,
-      images: images.length > 0 ? images : ["/ttbz-logo.png"],
-      sizes: sizes.map((s) => ({
-        size: s.size.trim(),
-        price: Number(s.price) || 0,
-        inStock: s.inStock !== false,
-      })),
-      isFeatured,
-      isActive,
-    };
-
-    onSave(payload);
+    setSaving(true);
+    try {
+      await onSave({
+        ...(product || {}),
+        title: title.trim(),
+        description: description.trim(),
+        fabricTag: fabricTag.trim() || null,
+        categoryIds: selectedCategoryIds,
+        images: images.length > 0 ? images : ["/ttbz-logo.png"],
+        sizes: sizes.map((s) => ({
+          size: s.size.trim(),
+          price: Number(s.price) || 0,
+          inStock: s.inStock !== false,
+        })),
+        isFeatured,
+        isActive,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content"
+      <form
+        className="modal-content modal-md"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: "760px",
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-label={product ? "Edit product" : "Create product"}
       >
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 22px",
-            borderBottom: "1px solid var(--border-subtle)",
-            backgroundColor: "#ffffff",
-            position: "sticky",
-            top: 0,
-            zIndex: 10,
-          }}
-        >
-          <div>
-            <h3 className="font-serif" style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--teal-900)" }}>
-              {product ? "Edit Handcrafted Product" : "Create New Product"}
+        <div className="modal-handle" />
+        <div className="modal-head">
+          <div style={{ minWidth: 0 }}>
+            <h3 className="font-serif modal-title">
+              {product ? "Edit Product" : "Create New Product"}
             </h3>
-            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-              Quick sizing, multi-category assignment & individual price tags
-            </span>
+            <span className="modal-sub">Sizes, pricing, photos & categories</span>
           </div>
-
-          <button
-            onClick={onClose}
-            style={{
-              background: "var(--teal-50)",
-              border: "none",
-              borderRadius: "50%",
-              width: "36px",
-              height: "36px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-            }}
-          >
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} style={{ padding: "20px", overflowY: "auto", flexGrow: 1 }}>
-          {/* Title & Status */}
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "6px" }}>
+        <div className="modal-body">
+          {/* Title */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle} htmlFor="pf-title">
               Product Title *
             </label>
             <input
+              id="pf-title"
               type="text"
               placeholder="e.g. Mint Blossom Hand-Embroidered Frock"
               value={title}
@@ -241,42 +221,25 @@ export default function ProductFormModal({
             />
           </div>
 
-          {/* MULTI-CATEGORY ASSIGNMENT */}
-          <div style={{ marginBottom: "20px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-              <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--teal-900)" }}>
-                Categories (Product can belong to multiple categories) *
-              </label>
-              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
-                Select all that apply
+          {/* Categories (multi-select) */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>
+              Categories *{" "}
+              <span style={{ fontWeight: 500, color: "var(--text-muted)", fontSize: "0.74rem" }}>
+                (can select more than 1)
               </span>
-            </div>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            </label>
+            <div className="row-wrap" style={{ gap: 8 }}>
               {categories.map((cat) => {
-                const isSelected = selectedCategoryIds.includes(cat.id);
+                const on = selectedCategoryIds.includes(cat.id);
                 return (
                   <button
                     key={cat.id}
                     type="button"
                     onClick={() => toggleCategory(cat.id)}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: "var(--radius-full)",
-                      fontSize: "0.82rem",
-                      fontWeight: isSelected ? 700 : 500,
-                      border: isSelected ? "1.5px solid var(--teal-600)" : "1px solid var(--border-subtle)",
-                      backgroundColor: isSelected ? "var(--teal-50)" : "#ffffff",
-                      color: isSelected ? "var(--teal-900)" : "var(--text-main)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      transition: "all 0.15s ease",
-                    }}
+                    className={`cat-pill ${on ? "active" : ""}`}
                   >
-                    <span>{cat.name}</span>
-                    {isSelected && <span style={{ color: "var(--teal-600)", fontWeight: 800 }}>✓</span>}
+                    {cat.name} {on && "✓"}
                   </button>
                 );
               })}
@@ -284,13 +247,14 @@ export default function ProductFormModal({
           </div>
 
           {/* Description */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "6px" }}>
-              Description & Fabric Details
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle} htmlFor="pf-desc">
+              Description & Craftsmanship Details
             </label>
             <textarea
+              id="pf-desc"
               rows={3}
-              placeholder="Handmade smocked frock, soft pure cotton fabric, embroidered rosebuds, pearl buttons..."
+              placeholder="Handmade smocked frock, delicate floral stitches, organza flounces…"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="input-field"
@@ -298,193 +262,355 @@ export default function ProductFormModal({
             />
           </div>
 
-          {/* SIZES & PRICING MATRIX WITH QUICK ADD */}
-          <div
-            style={{
-              padding: "16px",
-              backgroundColor: "#faf8f5",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--border-subtle)",
-              marginBottom: "20px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
-              <div>
-                <label style={{ fontSize: "0.9rem", fontWeight: 800, color: "var(--teal-900)", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <DollarSign size={16} color="var(--gold-primary)" />
-                  Sizes & Size-Specific Pricing
-                </label>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                  Each size can have a different price. Use Quick Add to create in seconds!
+          {/* Fabric / Material Tag (OPTIONAL - Per User Request) */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle} htmlFor="pf-fabric">
+              Fabric / Material Tag{" "}
+              <span style={{ fontWeight: 500, color: "var(--text-muted)", fontSize: "0.74rem" }}>
+                (Optional — leave blank to remove the cotton badge)
+              </span>
+            </label>
+            <input
+              id="pf-fabric"
+              type="text"
+              placeholder="e.g. 100% Baby-Safe Pure Cotton, Organza & Zari, or leave blank"
+              value={fabricTag}
+              onChange={(e) => setFabricTag(e.target.value)}
+              className="input-field"
+            />
+            <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 4 }}>
+              If you leave this empty, no hardcoded cotton badge will be shown to customers.
+            </div>
+          </div>
+
+          {/* Product Images & Multi-Upload in Sequence */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>
+              Product Images{" "}
+              <span style={{ fontWeight: 500, color: "var(--text-muted)", fontSize: "0.74rem" }}>
+                (First photo is the main storefront picture)
+              </span>
+            </label>
+
+            {/* Hidden multi-file input */}
+            <input
+              ref={directFileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleDirectMultiUpload}
+              style={{ display: "none" }}
+            />
+
+            {/* Thumbnail Strip with Reorder Controls */}
+            {images.length > 0 ? (
+              <div className="img-strip" style={{ marginBottom: 14 }}>
+                {images.map((img, idx) => (
+                  <div className="img-tile" key={`${img.slice(-24)}-${idx}`}>
+                    <img src={img} alt={`Product photo ${idx + 1}`} />
+                    <span className="img-seq-num">#{idx + 1}</span>
+                    {idx === 0 && <span className="main-tag">MAIN</span>}
+                    <div className="tile-actions">
+                      <button
+                        type="button"
+                        aria-label="Move left"
+                        disabled={idx === 0}
+                        onClick={() => moveImage(idx, -1)}
+                        title="Move Left"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Remove photo"
+                        onClick={() => removeImage(idx)}
+                        title="Remove"
+                      >
+                        <X size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Move right"
+                        disabled={idx === images.length - 1}
+                        onClick={() => moveImage(idx, 1)}
+                        title="Move Right"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 12 }}>
+                No photos selected yet. Upload multiple photos or choose from the upload gallery below.
+              </div>
+            )}
+
+            {/* Progress indicator during direct multi-upload */}
+            {directUploadProgress && (
+              <div style={{ marginBottom: 12, padding: "8px 12px", background: "var(--teal-50)", borderRadius: 8 }}>
+                <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "var(--teal-900)" }}>
+                  Uploading photo {directUploadProgress.done} of {directUploadProgress.total} in sequence…
+                </div>
+                <div className="progress" style={{ marginTop: 6 }}>
+                  <div style={{ width: `${(directUploadProgress.done / directUploadProgress.total) * 100}%` }} />
                 </div>
               </div>
+            )}
+
+            {/* Upload & Gallery Action Buttons */}
+            <div className="row-wrap" style={{ gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => directFileInputRef.current?.click()}
+                disabled={!!directUploadProgress}
+              >
+                <UploadCloud size={16} />
+                <span>Upload Multiple Photos</span>
+              </button>
 
               <button
                 type="button"
-                onClick={handleAddSizeRow}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  backgroundColor: "#ffffff",
-                  border: "1px solid var(--teal-500)",
-                  color: "var(--teal-800)",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
+                className="btn btn-outline"
+                onClick={() => setShowGallery(true)}
               >
-                <Plus size={14} /> Add Custom Size
+                <Images size={16} />
+                <span>Select from Upload Gallery</span>
               </button>
             </div>
 
-            {/* QUICK PRESETS BUTTONS */}
-            <div style={{ marginBottom: "12px", padding: "10px", backgroundColor: "#ffffff", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-              <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--teal-800)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
-                <Sparkles size={12} color="var(--gold-primary)" />
-                ⚡ QUICK SIZE PRESETS (1-Click Fill):
+            {/* URL input fallback */}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <input
+                type="url"
+                inputMode="url"
+                placeholder="…or paste image URL directly"
+                value={imageUrlInput}
+                onChange={(e) => setImageUrlInput(e.target.value)}
+                className="input-field"
+                style={{ fontSize: "0.85rem" }}
+              />
+              <button type="button" className="btn btn-ghost" onClick={handleAddImageUrl}>
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Sizes & Pricing */}
+          <div
+            style={{
+              padding: 14,
+              backgroundColor: "#faf8f5",
+              borderRadius: 14,
+              border: "1px solid var(--border-subtle)",
+              marginBottom: 20,
+            }}
+          >
+            <div className="row-wrap" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <div
+                  style={{
+                    fontSize: "0.92rem",
+                    fontWeight: 800,
+                    color: "var(--teal-900)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <DollarSign size={16} color="var(--gold-primary)" /> Sizes & Pricing
+                </div>
+                <div style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+                  Each size has its own price.
+                </div>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {QUICK_SIZE_PRESETS.map((preset, pIdx) => (
+              <button type="button" className="btn btn-outline" onClick={handleAddSizeRow}>
+                <Plus size={14} /> Add Size
+              </button>
+            </div>
+
+            {/* Quick 1-click presets */}
+            <div
+              style={{
+                marginBottom: 12,
+                padding: 10,
+                backgroundColor: "#fff",
+                borderRadius: 8,
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.74rem",
+                  fontWeight: 700,
+                  color: "var(--teal-800)",
+                  marginBottom: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <Sparkles size={12} color="var(--gold-primary)" /> QUICK SIZE PRESETS (1-Click)
+              </div>
+              <div className="row-wrap" style={{ gap: 6 }}>
+                {QUICK_SIZE_PRESETS.map((p) => (
                   <button
-                    key={pIdx}
+                    key={p.name}
                     type="button"
-                    onClick={() => handleApplyPreset(preset.sizes)}
+                    onClick={() => handleApplyPreset(p.sizes)}
+                    className="chip chip-teal"
                     style={{
-                      padding: "5px 10px",
-                      borderRadius: "6px",
-                      fontSize: "0.74rem",
-                      fontWeight: 600,
-                      backgroundColor: "var(--teal-50)",
-                      border: "1px solid var(--teal-300)",
-                      color: "var(--teal-900)",
                       cursor: "pointer",
+                      border: "1px solid var(--teal-300)",
+                      padding: "6px 10px",
+                      fontSize: "0.75rem",
                     }}
                   >
-                    + {preset.name}
+                    + {p.name}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* BATCH PRICING TOOL */}
+            {/* Batch pricing generator */}
             <div
+              className="row-wrap"
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                flexWrap: "wrap",
-                marginBottom: "14px",
+                marginBottom: 14,
                 padding: "8px 12px",
                 backgroundColor: "var(--teal-50)",
-                borderRadius: "8px",
+                borderRadius: 8,
+                gap: 8,
               }}
             >
-              <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "var(--teal-800)", display: "flex", alignItems: "center", gap: "4px" }}>
-                <Wand2 size={13} /> Batch Pricing:
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>Base {currency}:</span>
-                <input
-                  type="number"
-                  value={batchBasePrice}
-                  onChange={(e) => setBatchBasePrice(Number(e.target.value))}
-                  style={{ width: "80px", padding: "4px 8px", borderRadius: "4px", border: "1px solid var(--border-subtle)", fontSize: "0.8rem" }}
-                />
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>+ Step:</span>
-                <input
-                  type="number"
-                  value={batchStep}
-                  onChange={(e) => setBatchStep(Number(e.target.value))}
-                  style={{ width: "65px", padding: "4px 8px", borderRadius: "4px", border: "1px solid var(--border-subtle)", fontSize: "0.8rem" }}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleBatchSetPrices}
+              <span
                 style={{
-                  padding: "4px 10px",
-                  borderRadius: "4px",
-                  backgroundColor: "var(--teal-700)",
-                  color: "#ffffff",
-                  fontSize: "0.74rem",
-                  fontWeight: 600,
-                  border: "none",
-                  cursor: "pointer",
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                  color: "var(--teal-800)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
                 }}
               >
-                Apply to All Sizes
+                <Wand2 size={13} /> Batch:
+              </span>
+              <label
+                style={{
+                  fontSize: "0.74rem",
+                  color: "var(--text-muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                Base {currency}
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={batchBasePrice}
+                  onChange={(e) => setBatchBasePrice(Number(e.target.value))}
+                  style={{
+                    width: 78,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                />
+              </label>
+              <label
+                style={{
+                  fontSize: "0.74rem",
+                  color: "var(--text-muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                + Step
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={batchStep}
+                  onChange={(e) => setBatchStep(Number(e.target.value))}
+                  style={{
+                    width: 66,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ minHeight: 34, padding: "5px 12px", fontSize: "0.76rem" }}
+                onClick={handleBatchSetPrices}
+              >
+                Apply to all
               </button>
             </div>
 
-            {/* SIZES TABLE */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {/* Size rows list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {sizes.map((s, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 120px 100px 36px",
-                    gap: "8px",
-                    alignItems: "center",
-                    backgroundColor: "#ffffff",
-                    padding: "8px 10px",
-                    borderRadius: "6px",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
+                <div className="size-row" key={idx}>
                   <input
+                    className="f-name"
                     type="text"
                     value={s.size}
-                    placeholder="Size name (e.g. 0-3 Months)"
+                    placeholder="Size (e.g. 0-3 Months)"
+                    aria-label="Size name"
                     onChange={(e) => handleUpdateSizeRow(idx, "size", e.target.value)}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: "4px",
-                      border: "1px solid var(--border-subtle)",
-                      fontSize: "0.82rem",
-                      fontWeight: 600,
-                    }}
+                    style={{ fontWeight: 600 }}
                   />
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 600 }}>{currency}</span>
+                  <div className="f-price" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                      {currency}
+                    </span>
                     <input
                       type="number"
+                      inputMode="numeric"
                       value={s.price}
                       placeholder="Price"
+                      aria-label="Price"
                       onChange={(e) => handleUpdateSizeRow(idx, "price", Number(e.target.value))}
-                      style={{
-                        width: "100%",
-                        padding: "6px 8px",
-                        borderRadius: "4px",
-                        border: "1px solid var(--border-subtle)",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                      }}
+                      style={{ fontWeight: 700 }}
                     />
                   </div>
-
-                  <label style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.75rem", cursor: "pointer", color: s.inStock !== false ? "#1e7e34" : "#999" }}>
+                  <label
+                    className="f-stock"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                      color: s.inStock !== false ? "#1e7e34" : "#999",
+                      minHeight: 36,
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={s.inStock !== false}
                       onChange={(e) => handleUpdateSizeRow(idx, "inStock", e.target.checked)}
+                      style={{ width: 18, height: 18 }}
                     />
-                    <span>{s.inStock !== false ? "In Stock" : "Sold Out"}</span>
+                    <span>{s.inStock !== false ? "In stock" : "Sold out"}</span>
                   </label>
-
                   <button
+                    className="f-del"
                     type="button"
                     onClick={() => handleRemoveSizeRow(idx)}
                     disabled={sizes.length <= 1}
+                    aria-label="Remove size"
                     style={{
                       background: "transparent",
-                      border: "none",
+                      border: 0,
+                      width: 36,
+                      height: 36,
                       color: sizes.length <= 1 ? "#ccc" : "#d9534f",
                       cursor: sizes.length <= 1 ? "not-allowed" : "pointer",
                       display: "flex",
@@ -492,185 +618,91 @@ export default function ProductFormModal({
                       justifyContent: "center",
                     }}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={17} />
                   </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* PRODUCT IMAGES */}
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "6px" }}>
-              Product Images
-            </label>
-
-            {/* Current Images Preview */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
-              {images.map((img, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    position: "relative",
-                    width: "70px",
-                    height: "70px",
-                    borderRadius: "8px",
-                    border: "1px solid var(--border-subtle)",
-                    overflow: "hidden",
-                    backgroundColor: "#f5f5f5",
-                  }}
-                >
-                  <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveImage(idx)}
-                    style={{
-                      position: "absolute",
-                      top: "2px",
-                      right: "2px",
-                      backgroundColor: "rgba(0,0,0,0.6)",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "50%",
-                      width: "18px",
-                      height: "18px",
-                      fontSize: "11px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Add Image via URL or Upload */}
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <div style={{ flex: "1 1 200px", display: "flex", gap: "6px" }}>
-                <input
-                  type="text"
-                  placeholder="Paste image URL (https://...)"
-                  value={imageUrlInput}
-                  onChange={(e) => setImageUrlInput(e.target.value)}
-                  className="input-field"
-                  style={{ fontSize: "0.82rem" }}
-                />
-                <button
-                  type="button"
-                  onClick={handleAddImageUrl}
-                  style={{
-                    padding: "0 12px",
-                    borderRadius: "6px",
-                    backgroundColor: "var(--teal-50)",
-                    border: "1px solid var(--teal-300)",
-                    color: "var(--teal-900)",
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Add URL
-                </button>
-              </div>
-
-              {/* Upload File */}
-              <label
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "6px",
-                  backgroundColor: "var(--teal-700)",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                <Upload size={14} />
-                <span>{uploading ? "Uploading..." : "Upload Photo"}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  style={{ display: "none" }}
-                  disabled={uploading}
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Visibility and Featured flags */}
-          <div style={{ display: "flex", gap: "20px", marginBottom: "20px", padding: "12px", backgroundColor: "#FAF7F2", borderRadius: "8px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.84rem", fontWeight: 600, cursor: "pointer" }}>
+          {/* Visibility & Featured Flags */}
+          <div
+            className="row-wrap"
+            style={{
+              gap: 18,
+              padding: 12,
+              backgroundColor: "#FAF7F2",
+              borderRadius: 8,
+              border: "1px solid var(--border-subtle)",
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                minHeight: 36,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={isFeatured}
                 onChange={(e) => setIsFeatured(e.target.checked)}
+                style={{ width: 18, height: 18 }}
               />
-              <span>⭐ Feature on Homepage</span>
+              <span>⭐ Featured on Homepage</span>
             </label>
-
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.84rem", fontWeight: 600, cursor: "pointer" }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                minHeight: 36,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
+                style={{ width: 18, height: 18 }}
               />
-              <span>Active (Visible in store)</span>
+              <span>Visible in Store</span>
             </label>
           </div>
+        </div>
 
-          {/* Action buttons */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "10px",
-              paddingTop: "14px",
-              borderTop: "1px solid var(--border-subtle)",
-            }}
+        <div className="modal-foot" style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ flex: "1 1 auto", maxWidth: 260 }}
+            disabled={saving}
           >
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: "10px 18px",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border-subtle)",
-                backgroundColor: "#ffffff",
-                color: "var(--text-main)",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
+            {saving ? "Saving…" : "Save Product"}
+          </button>
+        </div>
+      </form>
 
-            <button
-              type="submit"
-              style={{
-                padding: "10px 22px",
-                borderRadius: "var(--radius-sm)",
-                border: "none",
-                backgroundColor: "var(--teal-700)",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Save Handcrafted Product
-            </button>
-          </div>
-        </form>
-      </div>
+      {/* Gallery Selector Modal */}
+      {showGallery && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <GalleryPicker
+            mode="select"
+            usedUrls={images}
+            onClose={() => setShowGallery(false)}
+            onConfirm={handleGalleryConfirm}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { MessageCircle, X, Share2, Check, Sparkles, ShieldCheck, HeartHandshake } from "lucide-react";
+import {
+  MessageCircle,
+  X,
+  Share2,
+  Check,
+  Sparkles,
+  ShieldCheck,
+  HeartHandshake,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { generateWhatsAppOrderUrl, fireOrderConfetti } from "../utils/whatsapp";
+import useBodyScrollLock from "../utils/useBodyScrollLock";
+import ImageZoomViewer from "./ImageZoomViewer";
 
 export default function ProductModal({
   product,
@@ -10,10 +22,9 @@ export default function ProductModal({
   onOpenPayment,
   currency = "PKR",
 }) {
-  if (!product) return null;
+  useBodyScrollLock(true);
 
-  // Selected size default to first available size
-  const sizes = product.sizes || [];
+  const sizes = product?.sizes || [];
   const [selectedSizeIndex, setSelectedSizeIndex] = useState(0);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [customNotes, setCustomNotes] = useState("");
@@ -22,29 +33,32 @@ export default function ProductModal({
   const selectedSize = sizes[selectedSizeIndex] || sizes[0] || { size: "Standard", price: 0 };
   const currentPrice = Number(selectedSize?.price || 0);
 
-  // Close on Escape key
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Handle WhatsApp Order Button
+  if (!product) return null;
+
+  const images = product.images?.length ? product.images : ["/ttbz-logo.png"];
+  const matchedCategories = categories.filter((c) => (product.categoryIds || []).includes(c.id));
+  const fabricBadge = product.fabricTag || product.fabric_tag || null;
+
   const handlePlaceOrderWhatsApp = () => {
     fireOrderConfetti();
-    const url = generateWhatsAppOrderUrl({
-      phone: settings?.whatsappNumber || "923256393722",
-      product,
-      selectedSize,
-      customNotes,
-      currency,
-    });
-    window.open(url, "_blank");
+    window.open(
+      generateWhatsAppOrderUrl({
+        phone: settings?.whatsappNumber || "923256393722",
+        product,
+        selectedSize,
+        customNotes,
+        currency,
+      }),
+      "_blank"
+    );
   };
 
-  // Copy or Share link
   const handleShare = async () => {
     const productUrl = `${window.location.origin}${window.location.pathname}#product-${product.id}`;
     if (navigator.share) {
@@ -56,10 +70,9 @@ export default function ProductModal({
         });
         return;
       } catch (err) {
-        // Fallback to clipboard
+        // Fall back to clipboard
       }
     }
-
     try {
       await navigator.clipboard.writeText(productUrl);
       setCopiedLink(true);
@@ -69,37 +82,19 @@ export default function ProductModal({
     }
   };
 
-  const images = product.images && product.images.length > 0 ? product.images : ["/ttbz-logo.png"];
-  const matchedCategories = (categories || []).filter((c) =>
-    (product.categoryIds || []).includes(c.id)
-  );
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-content"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          position: "relative",
-        }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={product.title}
       >
-        {/* Sticky Modal Header with Close & Share */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 20px",
-            borderBottom: "1px solid var(--border-subtle)",
-            position: "sticky",
-            top: 0,
-            backgroundColor: "#ffffff",
-            zIndex: 10,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="modal-handle" />
+
+        <div className="modal-head">
+          <div className="pm-badges">
             <span className="badge-pill badge-mint">
               <Sparkles size={11} /> Handcrafted
             </span>
@@ -109,134 +104,60 @@ export default function ProductModal({
               </span>
             ))}
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 38, height: 38 }}
               onClick={handleShare}
-              title="Share or Copy Product Link"
-              style={{
-                background: "transparent",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "50%",
-                width: "36px",
-                height: "36px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                color: "var(--teal-800)",
-              }}
+              aria-label="Share product link"
+              title="Share Link"
             >
               {copiedLink ? <Check size={16} color="var(--teal-600)" /> : <Share2 size={16} />}
             </button>
-
             <button
+              type="button"
+              className="modal-close"
               onClick={onClose}
+              aria-label="Close"
               title="Close"
-              style={{
-                background: "var(--teal-50)",
-                border: "none",
-                borderRadius: "50%",
-                width: "36px",
-                height: "36px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                color: "var(--teal-900)",
-                fontWeight: 700,
-              }}
             >
               <X size={18} />
             </button>
           </div>
         </div>
 
-        {/* Scrollable Body - 2 Columns on Desktop, Stacked on Mobile */}
-        <div
-          style={{
-            padding: "20px",
-            overflowY: "auto",
-            flexGrow: 1,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "20px",
-            alignItems: "start",
-          }}
-        >
-          {/* Left Column: Images */}
-          <div>
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                paddingTop: "95%",
-                borderRadius: "var(--radius-md)",
-                overflow: "hidden",
-                backgroundColor: "#FAF7F2",
-                marginBottom: "10px",
-                border: "1px solid var(--border-subtle)",
-              }}
-            >
-              <img
-                src={images[activeImageIndex] || images[0]}
+        <div className="modal-body">
+          <div className="pm-grid">
+            {/* Left: Product Images with Touch Zoom */}
+            <div className="pm-image-section">
+              <ImageZoomViewer
+                images={images}
+                activeIndex={activeImageIndex}
+                onIndexChange={setActiveImageIndex}
                 alt={product.title}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  backgroundColor: "#FAF7F2",
-                }}
-                onError={(e) => {
-                  e.currentTarget.src = "/ttbz-logo.png";
-                }}
               />
+
+              {/* Thumbnails row */}
+              {images.length > 1 && (
+                <div className="thumbs">
+                  {images.map((img, idx) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      className={`thumb ${activeImageIndex === idx ? "active" : ""}`}
+                      onClick={() => setActiveImageIndex(idx)}
+                      aria-label={`Show photo ${idx + 1}`}
+                    >
+                      <img src={img} alt="" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Multiple Image Thumbnails */}
-            {images.length > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  overflowX: "auto",
-                  paddingBottom: "4px",
-                }}
-              >
-                {images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    style={{
-                      width: "52px",
-                      height: "52px",
-                      borderRadius: "6px",
-                      overflow: "hidden",
-                      border: activeImageIndex === idx ? "2px solid var(--teal-600)" : "1px solid var(--border-subtle)",
-                      padding: "2px",
-                      background: "#ffffff",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <img
-                      src={img}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "4px" }}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Title, Dynamic Price, Size Matrix, Description */}
-          <div>
-            {/* Title and Active Price Display */}
-            <div style={{ marginBottom: "14px" }}>
+            {/* Right: Product Details, Pricing & Sizing */}
+            <div style={{ minWidth: 0 }}>
               <h2
                 className="font-serif"
                 style={{
@@ -244,257 +165,183 @@ export default function ProductModal({
                   fontWeight: 700,
                   color: "var(--teal-900)",
                   lineHeight: 1.25,
-                  marginBottom: "8px",
+                  marginBottom: 10,
                 }}
               >
                 {product.title}
               </h2>
 
+              {/* Price & Availability card */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  gap: 8,
                   backgroundColor: "var(--teal-50)",
                   padding: "10px 14px",
                   borderRadius: "var(--radius-md)",
                   border: "1px solid var(--teal-200)",
+                  marginBottom: 16,
                 }}
               >
-                <div>
-                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>
-                    Selected Size ({selectedSize?.size || "Standard"})
+                <div style={{ minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Size: {selectedSize?.size || "Standard"}
                   </span>
                   <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--teal-900)" }}>
                     {currency} {currentPrice.toLocaleString()}
                   </div>
                 </div>
-
-                <div
+                <span
                   style={{
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
                     color: selectedSize?.inStock !== false ? "#1e7e34" : "#d9534f",
                     backgroundColor: selectedSize?.inStock !== false ? "#e8f5e9" : "#fbe9e7",
-                    padding: "4px 8px",
+                    padding: "4px 10px",
                     borderRadius: "var(--radius-full)",
                   }}
                 >
-                  {selectedSize?.inStock !== false ? "✓ Available to Stitch/Ship" : "Made on Order"}
-                </div>
+                  {selectedSize?.inStock !== false ? "✓ Available" : "Made on order"}
+                </span>
               </div>
-            </div>
 
-            {/* SIZES SELECTOR WITH INDIVIDUAL PRICING */}
-            <div style={{ marginBottom: "16px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.82rem",
-                  fontWeight: 700,
-                  color: "var(--teal-900)",
-                  marginBottom: "6px",
-                }}
-              >
-                Choose Size & View Price:
-              </label>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(125px, 1fr))",
-                  gap: "6px",
-                }}
-              >
-                {sizes.map((s, idx) => {
-                  const isSelected = selectedSizeIndex === idx;
-                  return (
+              {/* Sizing options */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: 8 }}>
+                  Choose Size & See Price
+                </div>
+                <div className="size-grid">
+                  {sizes.map((s, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setSelectedSizeIndex(idx)}
-                      className={`size-pill ${isSelected ? "selected" : ""}`}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        textAlign: "left",
-                        padding: "7px 10px",
-                        cursor: "pointer",
-                      }}
+                      className={`size-pill ${selectedSizeIndex === idx ? "selected" : ""}`}
+                      aria-pressed={selectedSizeIndex === idx}
                     >
-                      <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>
-                        {s.size}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "0.74rem",
-                          color: isSelected ? "var(--teal-700)" : "var(--text-muted)",
-                          fontWeight: 600,
-                        }}
-                      >
+                      <span className="sz">{s.size}</span>
+                      <span className="pr">
                         {currency} {Number(s.price).toLocaleString()}
                       </span>
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Custom measurements / notes (Optional for customer) */}
-            <div style={{ marginBottom: "14px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
-                  marginBottom: "4px",
-                }}
-              >
-                Custom size / notes (optional):
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Baby is 9 months, need for Eid"
-                value={customNotes}
-                onChange={(e) => setCustomNotes(e.target.value)}
-                className="input-field"
-                style={{ fontSize: "0.82rem", padding: "8px 12px" }}
-              />
-            </div>
-
-            {/* Product Description */}
-            {product.description && (
-              <div style={{ marginBottom: "14px" }}>
-                <h4
-                  style={{
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    color: "var(--teal-900)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    marginBottom: "4px",
-                  }}
-                >
-                  Product Details & Care
-                </h4>
-                <p
-                  style={{
-                    fontSize: "0.82rem",
-                    color: "var(--text-muted)",
-                    lineHeight: 1.5,
-                    whiteSpace: "pre-line",
-                  }}
-                >
-                  {product.description}
-                </p>
-              </div>
-            )}
-
-            {/* Boutique Trust Signals */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "8px",
-                padding: "10px",
-                backgroundColor: "#FAF7F2",
-                borderRadius: "var(--radius-md)",
-                border: "1px dashed var(--teal-300)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <ShieldCheck size={16} color="var(--teal-600)" />
-                <div style={{ fontSize: "0.72rem", color: "var(--teal-900)", fontWeight: 600 }}>
-                  100% Baby-Safe Pure Cotton
+                  ))}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <HeartHandshake size={16} color="var(--teal-600)" />
-                <div style={{ fontSize: "0.72rem", color: "var(--teal-900)", fontWeight: 600 }}>
-                  Custom Tailored Fit
+
+              {/* Custom size / notes */}
+              <div style={{ marginBottom: 16 }}>
+                <label
+                  htmlFor="pm-notes"
+                  style={{
+                    display: "block",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Custom measurements / notes (optional)
+                </label>
+                <input
+                  id="pm-notes"
+                  type="text"
+                  placeholder="e.g. Baby is 9 months, event is on Sunday"
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  className="input-field"
+                  style={{ fontSize: "0.85rem" }}
+                />
+              </div>
+
+              {/* Description */}
+              {product.description && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      color: "var(--teal-900)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Craftsmanship & Details
+                  </h4>
+                  <p style={{ fontSize: "0.86rem", color: "var(--text-muted)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                    {product.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Trust Badges - Fabric tag is ONLY rendered if optional fabricTag is defined */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: fabricBadge ? "1fr 1fr" : "1fr",
+                  gap: 8,
+                  padding: 10,
+                  backgroundColor: "#FAF7F2",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px dashed var(--teal-300)",
+                }}
+              >
+                {fabricBadge && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <ShieldCheck size={16} color="var(--teal-600)" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.72rem", color: "var(--teal-900)", fontWeight: 600 }}>
+                      {fabricBadge}
+                    </span>
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <HeartHandshake size={16} color="var(--teal-600)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: "0.72rem", color: "var(--teal-900)", fontWeight: 600 }}>
+                    Custom Tailored for your Child
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* STICKY BOTTOM BAR: "Click here to place order on whatsapp" */}
-        <div
-          style={{
-            position: "sticky",
-            bottom: 0,
-            backgroundColor: "#ffffff",
-            padding: "12px 20px 14px",
-            borderTop: "1px solid var(--border-subtle)",
-            boxShadow: "0 -4px 16px rgba(0,0,0,0.06)",
-            zIndex: 10,
-          }}
-        >
-          {/* 30% Advance Notice Box */}
-          <div
-            style={{
-              backgroundColor: "#FFF8E1",
-              border: "1px solid #FFE082",
-              borderRadius: "8px",
-              padding: "7px 12px",
-              marginBottom: "10px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "8px",
-            }}
-          >
-            <div style={{ fontSize: "0.74rem", color: "#8D6E14", fontWeight: 700, lineHeight: 1.3 }}>
-              ⚠️ At least 30% payment is required to place order (Custom made on order)
-            </div>
+        {/* Modal Footer with Advance Payment Note & WhatsApp Order */}
+        <div className="modal-foot">
+          <div className="advance-note">
+            <span>⚠️ 30% advance payment required (custom made on order)</span>
             {onOpenPayment && (
-              <button
-                type="button"
-                onClick={onOpenPayment}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #FFE082",
-                  color: "#8D6E14",
-                  fontSize: "0.72rem",
-                  fontWeight: 800,
-                  padding: "4px 8px",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                }}
-              >
-                View Accounts 💳
+              <button type="button" onClick={onOpenPayment}>
+                Accounts 💳
               </button>
             )}
           </div>
 
           <button
+            type="button"
             onClick={handlePlaceOrderWhatsApp}
-            className="btn-whatsapp"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
-              fontSize: "0.98rem",
-              padding: "14px 20px",
-            }}
+            className="btn-whatsapp btn-wa-lg"
           >
             <MessageCircle size={22} color="#ffffff" />
             <span>Click here to place order on whatsapp</span>
           </button>
+
           <div
-            style={{
-              textAlign: "center",
-              fontSize: "0.72rem",
-              color: "var(--text-light)",
-              marginTop: "6px",
-            }}
+            className="hide-sm"
+            style={{ textAlign: "center", fontSize: "0.72rem", color: "var(--text-light)", marginTop: 6 }}
           >
-            Sends chosen size ({selectedSize?.size}) & direct link to WhatsApp: +{settings?.whatsappNumber || "92 325 6393722"}
+            Sends chosen size ({selectedSize?.size}) & product link to WhatsApp +
+            {settings?.whatsappNumber || "92 325 6393722"}
           </div>
         </div>
       </div>

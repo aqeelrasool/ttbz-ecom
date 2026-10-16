@@ -22,12 +22,16 @@ CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
+    fabric_tag TEXT,
     images JSONB DEFAULT '[]'::jsonb,
     is_featured BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+-- Migration helper if table already exists
+ALTER TABLE products ADD COLUMN IF NOT EXISTS fabric_tag TEXT;
+
 
 -- 3. PRODUCT_CATEGORIES (Many-to-Many junction table)
 -- Allows a single product to belong to multiple categories
@@ -86,3 +90,31 @@ INSERT INTO store_settings (key, value) VALUES
     ('currency', 'PKR'),
     ('announcement', '🌸 At least 30% payment is required to place the order because these dresses are made custom for you on order')
 ON CONFLICT (key) DO NOTHING;
+
+-- --------------------------------------------------------
+-- 6. IMAGE GALLERY + STORAGE BUCKET (safe to re-run)
+-- If you already ran the schema above, you only need to run this block.
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gallery_images (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    path TEXT,
+    name TEXT,
+    seq BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE gallery_images ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public read gallery_images" ON gallery_images;
+DROP POLICY IF EXISTS "Admin write gallery_images" ON gallery_images;
+CREATE POLICY "Public read gallery_images" ON gallery_images FOR SELECT USING (true);
+CREATE POLICY "Admin write gallery_images" ON gallery_images FOR ALL USING (true);
+
+-- Public storage bucket for product photos
+INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+DROP POLICY IF EXISTS "Public read product-images" ON storage.objects;
+DROP POLICY IF EXISTS "Public upload product-images" ON storage.objects;
+DROP POLICY IF EXISTS "Public delete product-images" ON storage.objects;
+CREATE POLICY "Public read product-images" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Public upload product-images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Public delete product-images" ON storage.objects FOR DELETE USING (bucket_id = 'product-images');

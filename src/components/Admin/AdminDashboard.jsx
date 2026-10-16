@@ -1,65 +1,38 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
-  Package,
-  FolderTree,
-  Database,
-  Settings,
-  Plus,
-  Edit2,
-  Trash2,
-  LogOut,
-  ExternalLink,
-  Search,
-  CheckCircle,
-  AlertCircle,
-  Copy,
-  Download,
-  Upload,
-  RefreshCw,
-  Sparkles,
+  Package, FolderTree, Database, Settings, Plus, Edit2, Trash2, LogOut, ExternalLink, Search,
+  CheckCircle, AlertCircle, Copy, Download, RefreshCw, Images,
 } from "lucide-react";
 import ProductFormModal from "./ProductFormModal";
+import GalleryPicker from "./GalleryPicker";
 import {
-  saveCategory,
-  deleteCategory,
-  saveProduct,
-  deleteProduct,
-  saveSettings,
-  testSupabaseConnection,
-  syncLocalToSupabase,
-  resetToDefaults,
+  saveCategory, deleteCategory, saveProduct, deleteProduct, saveSettings,
+  testSupabaseConnection, syncLocalToSupabase, resetToDefaults,
 } from "../../services/db";
+import schemaSql from "../../../schema.sql?raw";
 
-export default function AdminDashboard({
-  categories = [],
-  products = [],
-  settings,
-  onRefreshData,
-  onExitAdmin,
-}) {
-  // Authentication state
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return sessionStorage.getItem("ttbz_admin_logged_in") === "true";
-  });
+const lbl = { display: "block", fontSize: "0.8rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: 4 };
+const card = { backgroundColor: "#fff", padding: 20, borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", boxShadow: "var(--shadow-sm)" };
+const heading = { fontSize: "1.3rem", fontWeight: 700, color: "var(--teal-900)" };
+
+export default function AdminDashboard({ categories = [], products = [], settings, onRefreshData, onExitAdmin }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem("ttbz_admin_logged_in") === "true");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Tabs: 'products' | 'categories' | 'database' | 'settings'
+  // 'products' | 'categories' | 'gallery' | 'database' | 'settings'
   const [activeTab, setActiveTab] = useState("products");
 
-  // Product modal state
   const [editingProduct, setEditingProduct] = useState(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [productCategoryFilter, setProductCategoryFilter] = useState("all");
 
-  // Category modal / edit state
   const [editingCategory, setEditingCategory] = useState(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryDesc, setCategoryDesc] = useState("");
 
-  // Database settings state
   const [supabaseUrl, setSupabaseUrl] = useState(settings?.supabaseUrl || "");
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings?.supabaseAnonKey || "");
   const [dbTestResult, setDbTestResult] = useState(null);
@@ -67,7 +40,6 @@ export default function AdminDashboard({
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
-  // Store settings form state
   const [whatsappNumber, setWhatsappNumber] = useState(settings?.whatsappNumber || "923256393722");
   const [announcement, setAnnouncement] = useState(settings?.announcement || "");
   const [currency, setCurrency] = useState(settings?.currency || "PKR");
@@ -75,13 +47,9 @@ export default function AdminDashboard({
   const [newAdminPass, setNewAdminPass] = useState(settings?.adminPassword || "admin123");
   const [settingsSaved, setSettingsSaved] = useState(false);
 
-  // Handle Login
   const handleLogin = (e) => {
     e.preventDefault();
-    const correctUser = settings?.adminUsername || "admin";
-    const correctPass = settings?.adminPassword || "admin123";
-
-    if (loginUsername === correctUser && loginPassword === correctPass) {
+    if (loginUsername === (settings?.adminUsername || "admin") && loginPassword === (settings?.adminPassword || "admin123")) {
       setIsAuthenticated(true);
       sessionStorage.setItem("ttbz_admin_logged_in", "true");
       setLoginError("");
@@ -89,29 +57,26 @@ export default function AdminDashboard({
       setLoginError("Invalid admin credentials. Please try again.");
     }
   };
-
   const handleLogout = () => {
     sessionStorage.removeItem("ttbz_admin_logged_in");
     setIsAuthenticated(false);
   };
 
-  // Products Handlers
-  const handleOpenCreateProduct = () => {
-    setEditingProduct(null);
-    setIsProductModalOpen(true);
-  };
-
-  const handleOpenEditProduct = (prod) => {
-    setEditingProduct(prod);
-    setIsProductModalOpen(true);
-  };
-
+  // Products
+  const openProductModal = (prod = null) => { setEditingProduct(prod); setIsProductModalOpen(true); };
   const handleSaveProduct = async (productData) => {
-    await saveProduct(productData);
-    setIsProductModalOpen(false);
-    onRefreshData();
+    try {
+      await saveProduct(productData);
+      setIsProductModalOpen(false);
+      onRefreshData();
+    } catch (err) {
+      alert(
+        err?.name === "QuotaExceededError"
+          ? "Browser storage is full. Connect your free Supabase database (Free DB tab) so photos are stored online."
+          : "Could not save product: " + (err?.message || err)
+      );
+    }
   };
-
   const handleDeleteProduct = async (id, title) => {
     if (window.confirm(`Are you sure you want to delete "${title}"?`)) {
       await deleteProduct(id);
@@ -119,60 +84,46 @@ export default function AdminDashboard({
     }
   };
 
-  // Category Handlers
+  // Categories
+  const resetCategoryForm = () => { setEditingCategory(null); setCategoryName(""); setCategoryDesc(""); };
   const handleSaveCategory = async (e) => {
     e.preventDefault();
     if (!categoryName.trim()) return;
-
-    const payload = {
+    await saveCategory({
       id: editingCategory?.id || `cat-${Date.now()}`,
       name: categoryName.trim(),
       slug: categoryName.trim().toLowerCase().replace(/\s+/g, "-"),
       description: categoryDesc.trim(),
       displayOrder: editingCategory?.displayOrder || categories.length + 1,
-    };
-
-    await saveCategory(payload);
-    setEditingCategory(null);
-    setCategoryName("");
-    setCategoryDesc("");
+    });
+    resetCategoryForm();
     onRefreshData();
   };
-
   const handleDeleteCategory = async (id, name) => {
-    if (window.confirm(`Delete category "${name}"? Products linked to this category will not be deleted.`)) {
+    if (window.confirm(`Delete category "${name}"? Products linked to it will not be deleted.`)) {
       await deleteCategory(id);
       onRefreshData();
     }
   };
 
-  // Database Connection test
+  // Database
   const handleTestConnection = async () => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      setDbTestResult({ success: false, message: "Please provide both Supabase URL and Anon Key." });
-      return;
-    }
+    if (!supabaseUrl || !supabaseAnonKey) return setDbTestResult({ success: false, message: "Please provide both Supabase URL and Anon Key." });
     setIsTestingDb(true);
     setDbTestResult(null);
-    const result = await testSupabaseConnection(supabaseUrl, supabaseAnonKey);
-    setDbTestResult(result);
+    setDbTestResult(await testSupabaseConnection(supabaseUrl, supabaseAnonKey));
     setIsTestingDb(false);
   };
-
   const handleSaveDbSettings = async () => {
-    await saveSettings({
-      supabaseUrl: supabaseUrl.trim(),
-      supabaseAnonKey: supabaseAnonKey.trim(),
-    });
+    await saveSettings({ supabaseUrl: supabaseUrl.trim(), supabaseAnonKey: supabaseAnonKey.trim() });
     alert("Database credentials saved! Connecting to Supabase.");
     onRefreshData();
   };
-
   const handleSyncToSupabase = async () => {
     setIsSyncing(true);
     try {
       const res = await syncLocalToSupabase();
-      alert(`Success! Synced ${res.count} products and categories to your Supabase PostgreSQL database.`);
+      alert(`Success! Synced ${res.count} products and categories to Supabase.`);
       onRefreshData();
     } catch (err) {
       alert("Sync failed: " + err.message);
@@ -180,642 +131,178 @@ export default function AdminDashboard({
       setIsSyncing(false);
     }
   };
-
   const handleCopySql = () => {
-    const sql = `-- Tiny Threads By Zirwa Database Schema
-CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name VARCHAR(255) NOT NULL, slug VARCHAR(255) UNIQUE NOT NULL, description TEXT, display_order INT DEFAULT 0);
-CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, title VARCHAR(255) NOT NULL, description TEXT, images JSONB DEFAULT '[]'::jsonb, is_featured BOOLEAN DEFAULT false, is_active BOOLEAN DEFAULT true, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS product_categories (product_id TEXT REFERENCES products(id) ON DELETE CASCADE, category_id TEXT REFERENCES categories(id) ON DELETE CASCADE, PRIMARY KEY (product_id, category_id));
-CREATE TABLE IF NOT EXISTS product_sizes (id SERIAL PRIMARY KEY, product_id TEXT REFERENCES products(id) ON DELETE CASCADE, size VARCHAR(100) NOT NULL, price NUMERIC(10, 2) NOT NULL, in_stock BOOLEAN DEFAULT true, display_order INT DEFAULT 0);
-CREATE TABLE IF NOT EXISTS store_settings (key VARCHAR(100) PRIMARY KEY, value TEXT NOT NULL);
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_sizes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public read categories" ON categories FOR SELECT USING (true);
-CREATE POLICY "Public read products" ON products FOR SELECT USING (true);
-CREATE POLICY "Public read product_categories" ON product_categories FOR SELECT USING (true);
-CREATE POLICY "Public read product_sizes" ON product_sizes FOR SELECT USING (true);
-CREATE POLICY "Public read store_settings" ON store_settings FOR SELECT USING (true);
-CREATE POLICY "Public write categories" ON categories FOR ALL USING (true);
-CREATE POLICY "Public write products" ON products FOR ALL USING (true);
-CREATE POLICY "Public write product_categories" ON product_categories FOR ALL USING (true);
-CREATE POLICY "Public write product_sizes" ON product_sizes FOR ALL USING (true);
-CREATE POLICY "Public write store_settings" ON store_settings FOR ALL USING (true);`;
-
-    navigator.clipboard.writeText(sql);
+    navigator.clipboard?.writeText(schemaSql);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2500);
+  };
+  const handleExportBackup = () => {
+    const blob = new Blob([JSON.stringify({ categories, products, settings, exportedAt: new Date().toISOString() }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `ttbz_backup_${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
   };
 
   const handleSaveStoreSettings = async (e) => {
     e.preventDefault();
     await saveSettings({
-      whatsappNumber: whatsappNumber.trim(),
-      announcement: announcement.trim(),
-      currency: currency.trim(),
-      adminUsername: newAdminUser.trim(),
-      adminPassword: newAdminPass.trim(),
+      whatsappNumber: whatsappNumber.trim(), announcement: announcement.trim(), currency: currency.trim(),
+      adminUsername: newAdminUser.trim(), adminPassword: newAdminPass.trim(),
     });
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 3000);
     onRefreshData();
   };
 
-  const handleExportBackup = () => {
-    const data = {
-      categories,
-      products,
-      settings,
-      exportedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ttbz_backup_${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-  };
-
-  // Filter products
   const filteredProducts = products.filter((p) => {
-    const matchesSearch =
-      p.title.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.description && p.description.toLowerCase().includes(productSearch.toLowerCase()));
-    const matchesCategory =
-      productCategoryFilter === "all" ||
-      (p.categoryIds && p.categoryIds.includes(productCategoryFilter));
+    const q = productSearch.toLowerCase();
+    const matchesSearch = p.title.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q));
+    const matchesCategory = productCategoryFilter === "all" || (p.categoryIds && p.categoryIds.includes(productCategoryFilter));
     return matchesSearch && matchesCategory;
   });
 
-  // ----------------------------------------------------------------------
-  // LOGIN SCREEN (URL-Only Protected Gate)
-  // ----------------------------------------------------------------------
+  // ---------------------------------------------------------------- Login
   if (!isAuthenticated) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          backgroundColor: "#FAF7F2",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "20px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "400px",
-            width: "100%",
-            backgroundColor: "#ffffff",
-            borderRadius: "var(--radius-lg)",
-            padding: "32px 28px",
-            boxShadow: "var(--shadow-lg)",
-            border: "1px solid var(--border-subtle)",
-            textAlign: "center",
-          }}
-        >
-          <img
-            src="/ttbz-logo.png"
-            alt="Tiny Threads By Zirwa"
-            style={{
-              width: "68px",
-              height: "68px",
-              borderRadius: "50%",
-              margin: "0 auto 16px",
-              backgroundColor: "#FAF7F2",
-              padding: "4px",
-              border: "1.5px solid var(--teal-300)",
-            }}
-          />
-
-          <h2 className="font-serif" style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-            Admin Portal
-          </h2>
-          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "24px" }}>
-            Tiny Threads By Zirwa • Private Management Access
-          </p>
+      <div style={{ minHeight: "100vh", backgroundColor: "#FAF7F2", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ ...card, maxWidth: 400, width: "100%", padding: "32px 24px", boxShadow: "var(--shadow-lg)", textAlign: "center" }}>
+          <img src="/ttbz-logo.png" alt="Tiny Threads By Zirwa" style={{ width: 68, height: 68, borderRadius: "50%", margin: "0 auto 16px", backgroundColor: "#FAF7F2", padding: 4, border: "1.5px solid var(--teal-300)" }} />
+          <h1 className="font-serif" style={{ fontSize: "1.45rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: 4 }}>Admin Portal</h1>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 24 }}>Tiny Threads By Zirwa • Private access</p>
 
           {loginError && (
-            <div
-              style={{
-                backgroundColor: "#fde8e8",
-                color: "#c81e1e",
-                padding: "8px 12px",
-                borderRadius: "6px",
-                fontSize: "0.8rem",
-                marginBottom: "16px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <AlertCircle size={15} />
-              <span>{loginError}</span>
+            <div style={{ backgroundColor: "#fde8e8", color: "#c81e1e", padding: "8px 12px", borderRadius: 6, fontSize: "0.8rem", marginBottom: 16, display: "flex", alignItems: "center", gap: 6, textAlign: "left" }}>
+              <AlertCircle size={15} /> <span>{loginError}</span>
             </div>
           )}
 
-          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div style={{ textAlign: "left" }}>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                Username
-              </label>
-              <input
-                type="text"
-                placeholder="admin"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                className="input-field"
-                required
-              />
+          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14, textAlign: "left" }}>
+            <div>
+              <label style={lbl} htmlFor="al-user">Username</label>
+              <input id="al-user" type="text" autoComplete="username" autoCapitalize="none" placeholder="admin" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} className="input-field" required />
             </div>
-
-            <div style={{ textAlign: "left" }}>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                Password
-              </label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="input-field"
-                required
-              />
+            <div>
+              <label style={lbl} htmlFor="al-pass">Password</label>
+              <input id="al-pass" type="password" autoComplete="current-password" placeholder="••••••••" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} className="input-field" required />
             </div>
-
-            <button
-              type="submit"
-              style={{
-                marginTop: "10px",
-                padding: "12px",
-                backgroundColor: "var(--teal-700)",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                fontSize: "0.9rem",
-                fontWeight: 700,
-                cursor: "pointer",
-                transition: "background 0.2s ease",
-              }}
-            >
-              Sign In to Admin
-            </button>
+            <button type="submit" className="btn btn-primary" style={{ minHeight: 46, marginTop: 6 }}>Sign In to Admin</button>
           </form>
 
-          <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-subtle)" }}>
-            <button
-              onClick={onExitAdmin}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "var(--teal-600)",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-                textDecoration: "underline",
-              }}
-            >
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+            <button type="button" onClick={onExitAdmin} style={{ background: "transparent", border: 0, color: "var(--teal-600)", fontSize: "0.85rem", cursor: "pointer", textDecoration: "underline", minHeight: 36 }}>
               ← Back to Storefront
             </button>
-            <div style={{ fontSize: "0.72rem", color: "var(--text-light)", marginTop: "8px" }}>
-              Default credentials: <code style={{ backgroundColor: "#f5f5f5", padding: "1px 4px", borderRadius: "3px" }}>admin / admin123</code>
-            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // ----------------------------------------------------------------------
-  // AUTHENTICATED ADMIN DASHBOARD
-  // ----------------------------------------------------------------------
+  const tabs = [
+    { id: "products", icon: Package, text: `Products (${products.length})` },
+    { id: "categories", icon: FolderTree, text: `Categories (${categories.length})` },
+    { id: "gallery", icon: Images, text: "Image Gallery" },
+    { id: "database", icon: Database, text: "Free DB Setup" },
+    { id: "settings", icon: Settings, text: "Settings" },
+  ];
+
+  // ------------------------------------------------------------ Dashboard
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#FAF7F2", display: "flex", flexDirection: "column" }}>
-      {/* Admin Top Header */}
-      <header
-        style={{
-          backgroundColor: "#ffffff",
-          borderBottom: "1px solid var(--border-subtle)",
-          padding: "12px 20px",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <img
-              src="/ttbz-logo.png"
-              alt="Logo"
-              style={{ width: "36px", height: "36px", borderRadius: "50%", padding: "2px", border: "1px solid var(--teal-300)" }}
-            />
-            <div>
-              <span className="font-serif" style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--teal-900)" }}>
-                Tiny Threads Admin
-              </span>
-              <span style={{ fontSize: "0.72rem", color: "var(--gold-primary)", fontWeight: 700, marginLeft: "8px" }}>
-                EST. 2024
-              </span>
-            </div>
+      <header className="admin-bar">
+        <div className="row-wrap" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <img src="/ttbz-logo.png" alt="" style={{ width: 36, height: 36, borderRadius: "50%", padding: 2, border: "1px solid var(--teal-300)", flexShrink: 0 }} />
+            <span className="font-serif" style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--teal-900)", whiteSpace: "nowrap" }}>Tiny Threads Admin</span>
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <button
-              onClick={onExitAdmin}
-              title="View Customer Storefront"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "var(--radius-full)",
-                border: "1px solid var(--teal-300)",
-                backgroundColor: "var(--teal-50)",
-                color: "var(--teal-900)",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              <ExternalLink size={14} />
-              <span>Customer Storefront</span>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button type="button" className="pill-btn pill-teal" onClick={onExitAdmin} aria-label="View storefront" style={{ height: 38 }}>
+              <ExternalLink size={15} /> <span className="label">Storefront</span>
             </button>
-
-            <button
-              onClick={handleLogout}
-              title="Sign Out"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "var(--radius-full)",
-                border: "1px solid #fbd5d5",
-                backgroundColor: "#fff5f5",
-                color: "#c81e1e",
-                fontSize: "0.78rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              <LogOut size={14} />
-              <span>Sign Out</span>
+            <button type="button" className="pill-btn" onClick={handleLogout} aria-label="Sign out" style={{ height: 38, border: "1px solid #fbd5d5", background: "#fff5f5", color: "#c81e1e" }}>
+              <LogOut size={15} /> <span className="label">Sign out</span>
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div style={{ display: "flex", gap: "8px", marginTop: "14px", borderTop: "1px solid var(--border-subtle)", paddingTop: "10px", overflowX: "auto" }}>
-          <button
-            onClick={() => setActiveTab("products")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              border: "none",
-              backgroundColor: activeTab === "products" ? "var(--teal-700)" : "transparent",
-              color: activeTab === "products" ? "#ffffff" : "var(--text-main)",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <Package size={16} />
-            <span>Products ({products.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("categories")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              border: "none",
-              backgroundColor: activeTab === "categories" ? "var(--teal-700)" : "transparent",
-              color: activeTab === "categories" ? "#ffffff" : "var(--text-main)",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <FolderTree size={16} />
-            <span>Categories ({categories.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("database")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              border: "none",
-              backgroundColor: activeTab === "database" ? "var(--teal-700)" : "transparent",
-              color: activeTab === "database" ? "#ffffff" : "var(--text-main)",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <Database size={16} />
-            <span>Free DB & Storage Setup</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("settings")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "8px 14px",
-              borderRadius: "var(--radius-sm)",
-              border: "none",
-              backgroundColor: activeTab === "settings" ? "var(--teal-700)" : "transparent",
-              color: activeTab === "settings" ? "#ffffff" : "var(--text-main)",
-              fontSize: "0.85rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <Settings size={16} />
-            <span>Store Settings & Password</span>
-          </button>
+        <div className="admin-tabs" role="tablist">
+          {tabs.map(({ id, icon: Icon, text }) => (
+            <button key={id} type="button" role="tab" aria-selected={activeTab === id} className={`admin-tab ${activeTab === id ? "active" : ""}`} onClick={() => setActiveTab(id)}>
+              <Icon size={16} /> <span>{text}</span>
+            </button>
+          ))}
         </div>
       </header>
 
-      {/* Main Admin Content Container */}
-      <main style={{ flexGrow: 1, padding: "24px 16px", maxWidth: "1200px", width: "100%", margin: "0 auto" }}>
-        {/* ========================================================= */}
-        {/* TAB 1: PRODUCTS MANAGER */}
-        {/* ========================================================= */}
+      <main className="admin-main">
+        {/* ------------------------------ PRODUCTS ------------------------------ */}
         {activeTab === "products" && (
           <div>
-            {/* Action Bar */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "20px" }}>
+            <div className="row-wrap" style={{ justifyContent: "space-between", marginBottom: 16 }}>
               <div>
-                <h2 className="font-serif" style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--teal-900)" }}>
-                  Products Catalog
-                </h2>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Create handcrafted items, configure size-specific prices, and link across multiple categories
-                </p>
+                <h2 className="font-serif" style={heading}>Products Catalog</h2>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Size-specific prices & multiple categories</p>
               </div>
-
-              <button
-                onClick={handleOpenCreateProduct}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "10px 18px",
-                  borderRadius: "var(--radius-full)",
-                  backgroundColor: "var(--teal-700)",
-                  color: "#ffffff",
-                  fontSize: "0.85rem",
-                  fontWeight: 700,
-                  border: "none",
-                  cursor: "pointer",
-                  boxShadow: "var(--shadow-md)",
-                }}
-              >
-                <Plus size={16} />
-                <span>Add New Product</span>
+              <button type="button" className="btn btn-primary btn-block-sm" onClick={() => openProductModal()}>
+                <Plus size={16} /> Add New Product
               </button>
             </div>
 
-            {/* Filter and Search Bar */}
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                flexWrap: "wrap",
-                marginBottom: "16px",
-                backgroundColor: "#ffffff",
-                padding: "12px",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border-subtle)",
-              }}
-            >
-              <div style={{ flex: "1 1 240px", position: "relative" }}>
-                <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-light)" }} />
-                <input
-                  type="text"
-                  placeholder="Search products by title or description..."
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  className="input-field"
-                  style={{ paddingLeft: "36px", fontSize: "0.85rem" }}
-                />
+            <div className="row-wrap" style={{ ...card, padding: 12, marginBottom: 16, boxShadow: "none" }}>
+              <div style={{ flex: "1 1 220px", position: "relative" }}>
+                <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-light)" }} />
+                <input type="search" placeholder="Search products…" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} className="input-field" style={{ paddingLeft: 36 }} aria-label="Search products" />
               </div>
-
-              <select
-                value={productCategoryFilter}
-                onChange={(e) => setProductCategoryFilter(e.target.value)}
-                className="input-field"
-                style={{ width: "auto", minWidth: "160px", fontSize: "0.85rem" }}
-              >
+              <select value={productCategoryFilter} onChange={(e) => setProductCategoryFilter(e.target.value)} className="input-field" style={{ flex: "1 1 160px", width: "auto" }} aria-label="Filter by category">
                 <option value="all">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
-            {/* Products Grid / Cards */}
             {filteredProducts.length === 0 ? (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "40px",
-                  backgroundColor: "#ffffff",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px dashed var(--border-subtle)",
-                }}
-              >
-                <Package size={36} color="var(--teal-400)" style={{ margin: "0 auto 10px" }} />
-                <h4 style={{ color: "var(--teal-900)", marginBottom: "4px" }}>No products found</h4>
-                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px" }}>
-                  Try adjusting your search filter or add your first handcrafted product.
-                </p>
-                <button
-                  onClick={handleOpenCreateProduct}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: "var(--radius-sm)",
-                    backgroundColor: "var(--teal-700)",
-                    color: "#ffffff",
-                    border: "none",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Create Product
-                </button>
+              <div style={{ ...card, textAlign: "center", padding: 40, borderStyle: "dashed" }}>
+                <Package size={36} color="var(--teal-400)" style={{ margin: "0 auto 10px", display: "block" }} />
+                <h3 style={{ color: "var(--teal-900)", marginBottom: 4 }}>No products found</h3>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 14 }}>Adjust the filter or add your first product.</p>
+                <button type="button" className="btn btn-primary" onClick={() => openProductModal()}>Create Product</button>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "16px" }}>
+              <div className="admin-grid">
                 {filteredProducts.map((prod) => {
-                  const sizes = prod.sizes || [];
-                  const matchedCats = categories.filter((c) => (prod.categoryIds || []).includes(c.id));
-
+                  const sz = prod.sizes || [];
+                  const cats = categories.filter((c) => (prod.categoryIds || []).includes(c.id));
                   return (
-                    <div
-                      key={prod.id}
-                      style={{
-                        backgroundColor: "#ffffff",
-                        borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border-subtle)",
-                        padding: "14px",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        boxShadow: "var(--shadow-sm)",
-                      }}
-                    >
+                    <div key={prod.id} style={{ ...card, padding: 14, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                       <div>
-                        {/* Image + Quick Info */}
-                        <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
-                          <img
-                            src={prod.images?.[0] || "/ttbz-logo.png"}
-                            alt={prod.title}
-                            style={{
-                              width: "70px",
-                              height: "70px",
-                              borderRadius: "8px",
-                              objectFit: "cover",
-                              backgroundColor: "#FAF7F2",
-                              flexShrink: 0,
-                            }}
-                            onError={(e) => {
-                              e.currentTarget.src = "/ttbz-logo.png";
-                            }}
-                          />
-                          <div style={{ flexGrow: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                              {prod.isFeatured && (
-                                <span className="badge-pill badge-gold" style={{ fontSize: "0.65rem", padding: "2px 6px" }}>
-                                  Featured
-                                </span>
-                              )}
-                              <span
-                                style={{
-                                  fontSize: "0.68rem",
-                                  color: prod.isActive !== false ? "#1e7e34" : "#999",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                {prod.isActive !== false ? "● Active" : "○ Draft/Hidden"}
-                              </span>
+                        <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                          <img src={prod.images?.[0] || "/ttbz-logo.png"} alt={prod.title} style={{ width: 70, height: 70, borderRadius: 8, objectFit: "cover", backgroundColor: "#FAF7F2", flexShrink: 0 }} onError={(e) => { e.currentTarget.src = "/ttbz-logo.png"; }} />
+                          <div style={{ minWidth: 0 }}>
+                            <div className="row-wrap" style={{ gap: 6, marginBottom: 4 }}>
+                              {prod.isFeatured && <span className="badge-pill badge-gold" style={{ fontSize: "0.65rem", padding: "2px 6px" }}>Featured</span>}
+                              <span style={{ fontSize: "0.68rem", color: prod.isActive !== false ? "#1e7e34" : "#999", fontWeight: 700 }}>{prod.isActive !== false ? "● Active" : "○ Hidden"}</span>
+                              <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>{(prod.images || []).length} photo(s)</span>
                             </div>
-                            <h4
-                              className="font-serif"
-                              style={{
-                                fontSize: "1.05rem",
-                                fontWeight: 700,
-                                color: "var(--teal-900)",
-                                lineHeight: 1.25,
-                              }}
-                            >
-                              {prod.title}
-                            </h4>
+                            <h3 className="font-serif" style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--teal-900)", lineHeight: 1.25 }}>{prod.title}</h3>
                           </div>
                         </div>
-
-                        {/* Multiple Categories tags */}
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "10px" }}>
-                          {matchedCats.map((c) => (
-                            <span
-                              key={c.id}
-                              style={{
-                                fontSize: "0.68rem",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                backgroundColor: "var(--teal-50)",
-                                color: "var(--teal-800)",
-                                fontWeight: 600,
-                              }}
-                            >
-                              {c.name}
-                            </span>
-                          ))}
+                        <div className="row-wrap" style={{ gap: 4, marginBottom: 10 }}>
+                          {cats.map((c) => <span key={c.id} className="chip chip-teal">{c.name}</span>)}
                         </div>
-
-                        {/* Sizes & Pricing Matrix summary */}
-                        <div style={{ backgroundColor: "#faf8f5", padding: "8px 10px", borderRadius: "6px", marginBottom: "12px" }}>
-                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 700, marginBottom: "4px" }}>
-                            SIZES & PRICING ({sizes.length} SIZES):
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                            {sizes.map((s, idx) => (
-                              <span
-                                key={idx}
-                                style={{
-                                  fontSize: "0.72rem",
-                                  backgroundColor: "#ffffff",
-                                  padding: "2px 6px",
-                                  borderRadius: "4px",
-                                  border: "1px solid var(--border-subtle)",
-                                  color: "var(--text-main)",
-                                }}
-                              >
+                        <div style={{ backgroundColor: "#faf8f5", padding: "8px 10px", borderRadius: 6, marginBottom: 12 }}>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 700, marginBottom: 4 }}>SIZES & PRICING ({sz.length})</div>
+                          <div className="row-wrap" style={{ gap: 4 }}>
+                            {sz.map((s, i) => (
+                              <span key={i} style={{ fontSize: "0.72rem", background: "#fff", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border-subtle)" }}>
                                 <strong>{s.size}:</strong> {settings?.currency || "PKR"} {Number(s.price).toLocaleString()}
                               </span>
                             ))}
                           </div>
                         </div>
                       </div>
-
-                      {/* Card Actions */}
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid var(--border-subtle)", paddingTop: "10px" }}>
-                        <button
-                          onClick={() => handleOpenEditProduct(prod)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            padding: "6px 12px",
-                            borderRadius: "6px",
-                            backgroundColor: "var(--teal-50)",
-                            border: "1px solid var(--teal-300)",
-                            color: "var(--teal-900)",
-                            fontSize: "0.78rem",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Edit2 size={13} /> Edit
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteProduct(prod.id, prod.title)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            padding: "6px 12px",
-                            borderRadius: "6px",
-                            backgroundColor: "#fff5f5",
-                            border: "1px solid #fbd5d5",
-                            color: "#c81e1e",
-                            fontSize: "0.78rem",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Trash2 size={13} /> Delete
-                        </button>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--border-subtle)", paddingTop: 10 }}>
+                        <button type="button" className="btn btn-outline" style={{ minHeight: 38, padding: "6px 14px" }} onClick={() => openProductModal(prod)}><Edit2 size={13} /> Edit</button>
+                        <button type="button" className="btn" style={{ minHeight: 38, padding: "6px 14px", background: "#fff5f5", border: "1px solid #fbd5d5", color: "#c81e1e" }} onClick={() => handleDeleteProduct(prod.id, prod.title)}><Trash2 size={13} /> Delete</button>
                       </div>
                     </div>
                   );
@@ -825,168 +312,45 @@ CREATE POLICY "Public write store_settings" ON store_settings FOR ALL USING (tru
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* TAB 2: CATEGORIES MANAGER */}
-        {/* ========================================================= */}
+        {/* ------------------------------ CATEGORIES ----------------------------- */}
         {activeTab === "categories" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "24px" }}>
-            {/* Create / Edit Category Form */}
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                padding: "20px",
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "var(--shadow-sm)",
-                height: "fit-content",
-              }}
-            >
-              <h3 className="font-serif" style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                {editingCategory ? "Edit Category" : "Add New Category"}
-              </h3>
-              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "16px" }}>
-                Products can be linked to multiple categories simultaneously.
-              </p>
-
-              <form onSubmit={handleSaveCategory} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="admin-two">
+            <div style={{ ...card, height: "fit-content" }}>
+              <h2 className="font-serif" style={{ ...heading, marginBottom: 4 }}>{editingCategory ? "Edit Category" : "Add New Category"}</h2>
+              <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: 16 }}>A product can belong to several categories.</p>
+              <form onSubmit={handleSaveCategory} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                    Category Name *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Eid Handcrafted Collection"
-                    value={categoryName}
-                    onChange={(e) => setCategoryName(e.target.value)}
-                    className="input-field"
-                    required
-                  />
+                  <label style={lbl} htmlFor="cat-name">Category Name *</label>
+                  <input id="cat-name" type="text" placeholder="e.g. Eid Collection" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} className="input-field" required />
                 </div>
-
                 <div>
-                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Brief description for category..."
-                    value={categoryDesc}
-                    onChange={(e) => setCategoryDesc(e.target.value)}
-                    className="input-field"
-                  />
+                  <label style={lbl} htmlFor="cat-desc">Description</label>
+                  <input id="cat-desc" type="text" placeholder="Short description…" value={categoryDesc} onChange={(e) => setCategoryDesc(e.target.value)} className="input-field" />
                 </div>
-
-                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                  <button
-                    type="submit"
-                    style={{
-                      flexGrow: 1,
-                      padding: "10px",
-                      borderRadius: "6px",
-                      backgroundColor: "var(--teal-700)",
-                      color: "#ffffff",
-                      fontSize: "0.85rem",
-                      fontWeight: 700,
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {editingCategory ? "Update Category" : "Create Category"}
-                  </button>
-
-                  {editingCategory && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingCategory(null);
-                        setCategoryName("");
-                        setCategoryDesc("");
-                      }}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: "6px",
-                        border: "1px solid var(--border-subtle)",
-                        backgroundColor: "#ffffff",
-                        cursor: "pointer",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{editingCategory ? "Update Category" : "Create Category"}</button>
+                  {editingCategory && <button type="button" className="btn btn-ghost" onClick={resetCategoryForm}>Cancel</button>}
                 </div>
               </form>
             </div>
 
-            {/* Existing Categories List */}
             <div>
-              <h3 className="font-serif" style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "12px" }}>
-                Active Categories ({categories.length})
-              </h3>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <h2 className="font-serif" style={{ ...heading, marginBottom: 12 }}>Active Categories ({categories.length})</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {categories.map((cat) => {
-                  const linkedCount = products.filter((p) => (p.categoryIds || []).includes(cat.id)).length;
+                  const n = products.filter((p) => (p.categoryIds || []).includes(cat.id)).length;
                   return (
-                    <div
-                      key={cat.id}
-                      style={{
-                        backgroundColor: "#ffffff",
-                        padding: "14px 16px",
-                        borderRadius: "var(--radius-md)",
-                        border: "1px solid var(--border-subtle)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "12px",
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--teal-900)" }}>
-                            {cat.name}
-                          </span>
-                          <span className="badge-pill badge-mint" style={{ fontSize: "0.68rem" }}>
-                            {linkedCount} {linkedCount === 1 ? "Product" : "Products"}
-                          </span>
+                    <div key={cat.id} style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="row-wrap" style={{ gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--teal-900)" }}>{cat.name}</span>
+                          <span className="badge-pill badge-mint" style={{ fontSize: "0.68rem" }}>{n} {n === 1 ? "Product" : "Products"}</span>
                         </div>
-                        {cat.description && (
-                          <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                            {cat.description}
-                          </div>
-                        )}
+                        {cat.description && <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>{cat.description}</div>}
                       </div>
-
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button
-                          onClick={() => {
-                            setEditingCategory(cat);
-                            setCategoryName(cat.name);
-                            setCategoryDesc(cat.description || "");
-                          }}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: "4px",
-                            backgroundColor: "var(--teal-50)",
-                            border: "1px solid var(--teal-300)",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Edit2 size={13} color="var(--teal-800)" />
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: "4px",
-                            backgroundColor: "#fff5f5",
-                            border: "1px solid #fbd5d5",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Trash2 size={13} color="#c81e1e" />
-                        </button>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button type="button" aria-label={`Edit ${cat.name}`} className="icon-btn" style={{ borderRadius: 6, background: "var(--teal-50)", borderColor: "var(--teal-300)" }} onClick={() => { setEditingCategory(cat); setCategoryName(cat.name); setCategoryDesc(cat.description || ""); }}><Edit2 size={14} /></button>
+                        <button type="button" aria-label={`Delete ${cat.name}`} className="icon-btn" style={{ borderRadius: 6, background: "#fff5f5", borderColor: "#fbd5d5", color: "#c81e1e" }} onClick={() => handleDeleteCategory(cat.id, cat.name)}><Trash2 size={14} /></button>
                       </div>
                     </div>
                   );
@@ -996,383 +360,122 @@ CREATE POLICY "Public write store_settings" ON store_settings FOR ALL USING (tru
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* TAB 3: FREE DATABASE & STORAGE SETUP */}
-        {/* ========================================================= */}
+        {/* -------------------------------- GALLERY ------------------------------ */}
+        {activeTab === "gallery" && (
+          <div style={card}>
+            <h2 className="font-serif" style={{ ...heading, marginBottom: 4 }}>Image Gallery</h2>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 16 }}>
+              Upload many photos at once. They stay in upload order (#1, #2, …) and can be picked when creating a product.
+            </p>
+            <GalleryPicker mode="manage" />
+          </div>
+        )}
+
+        {/* ------------------------------- DATABASE ------------------------------ */}
         {activeTab === "database" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Guide Card */}
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                padding: "24px",
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--border-subtle)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                <Database size={24} color="var(--teal-600)" />
-                <h3 className="font-serif" style={{ fontSize: "1.35rem", fontWeight: 700, color: "var(--teal-900)" }}>
-                  100% Free PostgreSQL & Image Storage (Supabase / Neon)
-                </h3>
-              </div>
-              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6, marginBottom: "16px" }}>
-                Your store currently runs in <strong>High-Performance Browser Cache & Local Storage</strong>, allowing you to edit products and orders immediately. To connect a permanent online database for 100% free with <strong>NO backend code required</strong>, follow these 3 steps:
-              </p>
+          <div style={card}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <Database size={24} color="var(--teal-600)" style={{ flexShrink: 0 }} />
+              <h2 className="font-serif" style={heading}>Free Online Database & Image Storage</h2>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 16 }}>
+              Until a database is connected, data is kept only in <strong>this browser</strong> (customers will not see it). Connect a free Supabase project (no backend code) to publish products and photos for everyone:
+            </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                  gap: "14px",
-                  marginBottom: "20px",
-                }}
-              >
-                <div style={{ backgroundColor: "#FAF7F2", padding: "14px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-                  <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--teal-900)", marginBottom: "4px" }}>
-                    1. Create Free Supabase Project
-                  </div>
-                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                    Go to <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: "var(--teal-600)", fontWeight: 700 }}>supabase.com</a> and create a free project (Free forever, includes 500MB DB & 1GB image storage).
-                  </p>
+            <div className="admin-grid" style={{ marginBottom: 20 }}>
+              {[
+                ["1. Create a free project", <>Sign up at <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: "var(--teal-600)", fontWeight: 700 }}>supabase.com</a> and create a project.</>],
+                ["2. Run the SQL", "Tap “Copy SQL Schema”, open Supabase → SQL Editor, paste and Run. This also creates the photo bucket."],
+                ["3. Paste URL & key", "Project Settings → API: copy the Project URL and anon public key into the form below."],
+              ].map(([t, d]) => (
+                <div key={t} style={{ backgroundColor: "#FAF7F2", padding: 14, borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--teal-900)", marginBottom: 4 }}>{t}</div>
+                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{d}</p>
                 </div>
+              ))}
+            </div>
 
-                <div style={{ backgroundColor: "#FAF7F2", padding: "14px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-                  <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--teal-900)", marginBottom: "4px" }}>
-                    2. Run SQL Schema
-                  </div>
-                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                    Click the <strong>Copy SQL Schema</strong> button below, open your Supabase SQL Editor, paste and click Run!
-                  </p>
+            <div style={{ backgroundColor: "var(--teal-50)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--teal-200)", marginBottom: 20 }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: 12 }}>Supabase credentials</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={lbl} htmlFor="db-url">Project URL</label>
+                  <input id="db-url" type="url" placeholder="https://your-project-id.supabase.co" value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} className="input-field" />
                 </div>
-
-                <div style={{ backgroundColor: "#FAF7F2", padding: "14px", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-                  <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--teal-900)", marginBottom: "4px" }}>
-                    3. Paste Project URL & Key
-                  </div>
-                  <p style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                    In Project Settings &gt; API, copy the <strong>Project URL</strong> and <strong>anon public key</strong>, and paste them in the form below.
-                  </p>
+                <div>
+                  <label style={lbl} htmlFor="db-key">Anon public key</label>
+                  <input id="db-key" type="password" placeholder="eyJhbGciOi…" value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} className="input-field" />
                 </div>
               </div>
 
-              {/* Database Credentials Form */}
-              <div style={{ backgroundColor: "var(--teal-50)", padding: "18px", borderRadius: "var(--radius-md)", border: "1px solid var(--teal-200)", marginBottom: "20px" }}>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "12px" }}>
-                  Supabase / Online PostgreSQL Credentials
-                </h4>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "14px" }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                      Project URL (e.g. https://xyz.supabase.co)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="https://your-project-id.supabase.co"
-                      value={supabaseUrl}
-                      onChange={(e) => setSupabaseUrl(e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                      Anon Public Key (safe to use in frontend client)
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      value={supabaseAnonKey}
-                      onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
+              {dbTestResult && (
+                <div style={{ padding: "10px 14px", borderRadius: 6, marginBottom: 14, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 8, backgroundColor: dbTestResult.success ? "#e8f5e9" : "#ffebee", color: dbTestResult.success ? "#1e7e34" : "#c62828" }}>
+                  {dbTestResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />} <span>{dbTestResult.message}</span>
                 </div>
+              )}
 
-                {dbTestResult && (
-                  <div
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: "6px",
-                      marginBottom: "14px",
-                      fontSize: "0.82rem",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      backgroundColor: dbTestResult.success ? "#e8f5e9" : "#ffebee",
-                      color: dbTestResult.success ? "#1e7e34" : "#c62828",
-                    }}
-                  >
-                    {dbTestResult.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                    <span>{dbTestResult.message}</span>
-                  </div>
-                )}
-
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={handleTestConnection}
-                    disabled={isTestingDb}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: "6px",
-                      backgroundColor: "#ffffff",
-                      border: "1px solid var(--teal-500)",
-                      color: "var(--teal-900)",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {isTestingDb ? "Testing..." : "Test Connection"}
-                  </button>
-
-                  <button
-                    onClick={handleSaveDbSettings}
-                    style={{
-                      padding: "8px 18px",
-                      borderRadius: "6px",
-                      backgroundColor: "var(--teal-700)",
-                      color: "#ffffff",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Save Credentials
-                  </button>
-
-                  <button
-                    onClick={handleSyncToSupabase}
-                    disabled={isSyncing}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: "6px",
-                      backgroundColor: "var(--teal-800)",
-                      color: "#ffffff",
-                      fontSize: "0.82rem",
-                      fontWeight: 700,
-                      border: "none",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <RefreshCw size={14} className={isSyncing ? "spin" : ""} />
-                    <span>{isSyncing ? "Syncing..." : "Sync Local Data to Supabase"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Copy SQL Schema button */}
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                <button
-                  onClick={handleCopySql}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "10px 16px",
-                    borderRadius: "6px",
-                    backgroundColor: "#FAF7F2",
-                    border: "1.5px solid var(--teal-500)",
-                    color: "var(--teal-900)",
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Copy size={16} />
-                  <span>{copiedSql ? "✓ Copied to Clipboard!" : "Copy SQL Schema (schema.sql)"}</span>
-                </button>
-
-                <button
-                  onClick={handleExportBackup}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "10px 16px",
-                    borderRadius: "6px",
-                    backgroundColor: "#ffffff",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-main)",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Download size={15} />
-                  <span>Export JSON Backup</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (window.confirm("Reset all products and categories to sample boutique designs?")) {
-                      resetToDefaults();
-                      onRefreshData();
-                      alert("Reset to initial sample designs!");
-                    }
-                  }}
-                  style={{
-                    padding: "10px 16px",
-                    borderRadius: "6px",
-                    backgroundColor: "#ffffff",
-                    border: "1px solid var(--border-subtle)",
-                    color: "var(--text-muted)",
-                    fontSize: "0.85rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Reset to Factory Demo Data
+              <div className="row-wrap">
+                <button type="button" className="btn btn-outline" onClick={handleTestConnection} disabled={isTestingDb}>{isTestingDb ? "Testing…" : "Test Connection"}</button>
+                <button type="button" className="btn btn-primary" onClick={handleSaveDbSettings}>Save Credentials</button>
+                <button type="button" className="btn btn-primary" style={{ background: "var(--teal-800)" }} onClick={handleSyncToSupabase} disabled={isSyncing}>
+                  <RefreshCw size={14} className={isSyncing ? "spin" : ""} /> {isSyncing ? "Syncing…" : "Sync Local Data to Supabase"}
                 </button>
               </div>
+            </div>
+
+            <div className="row-wrap">
+              <button type="button" className="btn btn-outline" onClick={handleCopySql}><Copy size={16} /> {copiedSql ? "✓ Copied!" : "Copy SQL Schema"}</button>
+              <button type="button" className="btn btn-ghost" onClick={handleExportBackup}><Download size={15} /> Export JSON Backup</button>
+              <button type="button" className="btn btn-ghost" style={{ color: "var(--text-muted)" }} onClick={() => { if (window.confirm("Reset all products and categories to the sample designs?")) { resetToDefaults(); onRefreshData(); } }}>Reset to Demo Data</button>
             </div>
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* TAB 4: STORE SETTINGS & PASSWORD */}
-        {/* ========================================================= */}
+        {/* ------------------------------- SETTINGS ------------------------------ */}
         {activeTab === "settings" && (
-          <div
-            style={{
-              maxWidth: "600px",
-              backgroundColor: "#ffffff",
-              padding: "24px",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--border-subtle)",
-              boxShadow: "var(--shadow-sm)",
-            }}
-          >
-            <h3 className="font-serif" style={{ fontSize: "1.35rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-              Store Settings & Admin Password
-            </h3>
-            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "20px" }}>
-              Configure your WhatsApp order recipient and single-admin credentials.
-            </p>
+          <div style={{ ...card, maxWidth: 600 }}>
+            <h2 className="font-serif" style={{ ...heading, marginBottom: 4 }}>Store Settings & Admin Password</h2>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 20 }}>WhatsApp order number and the single admin login.</p>
 
             {settingsSaved && (
-              <div
-                style={{
-                  backgroundColor: "#e8f5e9",
-                  color: "#1e7e34",
-                  padding: "10px 14px",
-                  borderRadius: "6px",
-                  fontSize: "0.85rem",
-                  marginBottom: "16px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <CheckCircle size={16} />
-                <span>Settings saved successfully!</span>
+              <div style={{ backgroundColor: "#e8f5e9", color: "#1e7e34", padding: "10px 14px", borderRadius: 6, fontSize: "0.85rem", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+                <CheckCircle size={16} /> <span>Settings saved!</span>
               </div>
             )}
 
-            <form onSubmit={handleSaveStoreSettings} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <form onSubmit={handleSaveStoreSettings} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                  WhatsApp Phone Number for Orders *
-                </label>
-                <input
-                  type="text"
-                  placeholder="923256393722"
-                  value={whatsappNumber}
-                  onChange={(e) => setWhatsappNumber(e.target.value)}
-                  className="input-field"
-                  required
-                />
-                <span style={{ fontSize: "0.72rem", color: "var(--text-light)" }}>
-                  Orders placed via "Click here to place order on whatsapp" will be sent to this number.
-                </span>
+                <label style={lbl} htmlFor="st-wa">WhatsApp number for orders *</label>
+                <input id="st-wa" type="tel" inputMode="tel" placeholder="923256393722" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="input-field" required />
+                <span style={{ fontSize: "0.72rem", color: "var(--text-light)" }}>Orders from “Click here to place order on whatsapp” go to this number.</span>
               </div>
-
               <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                  Currency Symbol
-                </label>
-                <input
-                  type="text"
-                  placeholder="PKR"
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="input-field"
-                />
+                <label style={lbl} htmlFor="st-cur">Currency</label>
+                <input id="st-cur" type="text" placeholder="PKR" value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field" />
               </div>
-
               <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                  Top Announcement Banner
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Free Delivery on orders over PKR 5,000"
-                  value={announcement}
-                  onChange={(e) => setAnnouncement(e.target.value)}
-                  className="input-field"
-                />
+                <label style={lbl} htmlFor="st-ann">Top announcement banner</label>
+                <input id="st-ann" type="text" value={announcement} onChange={(e) => setAnnouncement(e.target.value)} className="input-field" />
               </div>
-
-              <div style={{ paddingTop: "14px", borderTop: "1px solid var(--border-subtle)" }}>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "10px" }}>
-                  Admin Login Credentials
-                </h4>
-
-                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ paddingTop: 14, borderTop: "1px solid var(--border-subtle)" }}>
+                <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: 10 }}>Admin login</h3>
+                <div className="row-wrap" style={{ alignItems: "flex-start" }}>
                   <div style={{ flex: "1 1 180px" }}>
-                    <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                      Admin Username
-                    </label>
-                    <input
-                      type="text"
-                      value={newAdminUser}
-                      onChange={(e) => setNewAdminUser(e.target.value)}
-                      className="input-field"
-                      required
-                    />
+                    <label style={lbl} htmlFor="st-user">Username</label>
+                    <input id="st-user" type="text" autoCapitalize="none" value={newAdminUser} onChange={(e) => setNewAdminUser(e.target.value)} className="input-field" required />
                   </div>
-
                   <div style={{ flex: "1 1 180px" }}>
-                    <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--teal-900)", marginBottom: "4px" }}>
-                      Admin Password
-                    </label>
-                    <input
-                      type="password"
-                      value={newAdminPass}
-                      onChange={(e) => setNewAdminPass(e.target.value)}
-                      className="input-field"
-                      required
-                    />
+                    <label style={lbl} htmlFor="st-pass">Password</label>
+                    <input id="st-pass" type="password" autoComplete="new-password" value={newAdminPass} onChange={(e) => setNewAdminPass(e.target.value)} className="input-field" required />
                   </div>
                 </div>
               </div>
-
-              <button
-                type="submit"
-                style={{
-                  marginTop: "8px",
-                  padding: "12px",
-                  borderRadius: "var(--radius-sm)",
-                  backgroundColor: "var(--teal-700)",
-                  color: "#ffffff",
-                  fontSize: "0.9rem",
-                  fontWeight: 700,
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                Save Settings & Credentials
-              </button>
+              <button type="submit" className="btn btn-primary" style={{ minHeight: 46 }}>Save Settings & Credentials</button>
             </form>
           </div>
         )}
       </main>
 
-      {/* Product Form Modal */}
       {isProductModalOpen && (
         <ProductFormModal
           product={editingProduct}
